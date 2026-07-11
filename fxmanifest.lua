@@ -1,8 +1,8 @@
 fx_version "cerulean"
 game "gta5"
 
-author "SwisserAI"
-description "Garbage Job - Generated with SwisserAI - https://ai.swisser.dev"
+author "Ghost Developments"
+description "Garbage Job"
 version "1.0.0"
 
 shared_scripts {
