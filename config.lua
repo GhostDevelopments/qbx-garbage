@@ -1,6 +1,6 @@
 Config = {}
 
-Config.JobName = "garbage" -- Set to nil if you want it to be a public job
+Config.JobName = nil -- Set to nil if you want it to be a public job
 Config.Model = "trash"
 Config.Payout = { min = 500, max = 1200 }
 
