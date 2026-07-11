@@ -6,14 +6,59 @@ local bagObj = nil
 local stopCount = 0
 local totalStops = #Config.TrashZones
 
+-- Helper for safe model loading without throwing script errors
+local function SafeRequestModel(model)
+    local hash = type(model) == "number" and model or joaat(model)
+    
+    if not IsModelInCdimage(hash) then return false end
+    
+    RequestModel(hash)
+    local timer = GetGameTimer() + 5000
+    while not HasModelLoaded(hash) do
+        Wait(0)
+        if GetGameTimer() > timer then
+            print("^1[Garbage Job] Timeout loading model: " .. tostring(model) .. "^7")
+            return false
+        end
+    end
+    
+    return true
+end
+
 -- Initialize Boss NPC and Target
 CreateThread(function()
-    local model = `s_m_y_garbage_01`
-    lib.requestModel(model)
-    local boss = CreatePed(4, model, Config.Locations.Start.x, Config.Locations.Start.y, Config.Locations.Start.z - 1.0, Config.Locations.Start.w, false, true)
-    SetEntityInteraction(boss, false)
+    local bossModels = {"s_m_y_garbage_01", "s_m_y_construct_01", "a_m_m_prolhost_01"}
+    local selectedModel = nil
+    
+    for _, m in ipairs(bossModels) do
+        if SafeRequestModel(m) then
+            selectedModel = m
+            break
+        end
+    end
+    
+    if not selectedModel then
+        print("^1[Garbage Job] Could not load any boss models!^7")
+        return
+    end
+    
+    local modelHash = joaat(selectedModel)
+    local boss = CreatePed(4, modelHash, Config.Locations.Start.x, Config.Locations.Start.y, Config.Locations.Start.z, Config.Locations.Start.w, false, false)
+    SetEntityInvincible(boss, true)
     FreezeEntityPosition(boss, true)
     SetBlockingOfNonTemporaryEvents(boss, true)
+    SetModelAsNoLongerNeeded(modelHash)
+
+    -- Add Blip for Start
+    local blip = AddBlipForCoord(Config.Locations.Start.x, Config.Locations.Start.y, Config.Locations.Start.z)
+    SetBlipSprite(blip, 493)
+    SetBlipDisplay(blip, 4)
+    SetBlipScale(blip, 0.8)
+    SetBlipColour(blip, 5)
+    SetBlipAsShortRange(blip, true)
+    BeginTextCommandSetBlipName("STRING")
+    AddTextComponentString("Garbage Depot")
+    EndTextCommandSetBlipName(blip)
 
     exports.ox_target:addLocalEntity(boss, {
         {
@@ -38,20 +83,32 @@ CreateThread(function()
 end)
 
 function StartGarbageJob()
-    local success = lib.callback.await("garbage:server:startJob", false)
-    if not success then return end
+    -- Check for job requirement if Config.JobName is set
+    if Config.JobName then
+        local QBX = exports.qbx_core:GetPlayerData()
+        if QBX.job.name ~= Config.JobName then
+            return lib.notify({title = "Error", description = "You do not have the required job!", type = "error"})
+        end
+    end
 
-    lib.requestModel(Config.Model)
-    currentVehicle = CreateVehicle(Config.Model, Config.Locations.VehicleSpawn.x, Config.Locations.VehicleSpawn.y, Config.Locations.VehicleSpawn.z, Config.Locations.VehicleSpawn.w, true, false)
+    local modelName = Config.Model or "trash"
+    
+    if not SafeRequestModel(modelName) then
+        modelName = "trash" -- Final fallback to standard GTA trash truck
+        if not SafeRequestModel(modelName) then
+            return lib.notify({title = "Error", description = "Could not load garbage truck model!", type = "error"})
+        end
+    end
+
+    local serverSuccess = lib.callback.await("garbage:server:startJob", false)
+    if not serverSuccess then return end
+
+    local modelHash = joaat(modelName)
+    currentVehicle = CreateVehicle(modelHash, Config.Locations.VehicleSpawn.x, Config.Locations.VehicleSpawn.y, Config.Locations.VehicleSpawn.z, Config.Locations.VehicleSpawn.w, true, false)
     local plate = GetVehicleNumberPlateText(currentVehicle)
     
-    -- Vehicle Keys (Export depends on your script, usually qbx_vehiclekeys or similar)
-    if exports.qbx_vehiclekeys then
-        exports.qbx_vehiclekeys:GiveKeys(plate)
-    else
-        -- Fallback for generic key scripts
-        TriggerEvent("vehiclekeys:client:SetOwner", plate)
-    end
+    -- Vehicle Keys
+    TriggerEvent("vehiclekeys:client:SetOwner", plate)
 
     jobStarted = true
     stopCount = 1
@@ -66,7 +123,7 @@ function SetNextStop()
         lib.notify({title = "Route Complete", description = "Return the truck to the depot", type = "success"})
         currentBlip = AddBlipForCoord(Config.Locations.Return.x, Config.Locations.Return.y, Config.Locations.Return.z)
         SetBlipSprite(currentBlip, 351)
-        SetBlipColor(currentBlip, 2)
+        SetBlipColour(currentBlip, 2)
         SetBlipRoute(currentBlip, true)
         return
     end
@@ -74,19 +131,20 @@ function SetNextStop()
     local coords = Config.TrashZones[stopCount]
     currentBlip = AddBlipForCoord(coords.x, coords.y, coords.z)
     SetBlipSprite(currentBlip, 1)
-    SetBlipColor(currentBlip, 5)
+    SetBlipColour(currentBlip, 5)
     SetBlipRoute(currentBlip, true)
     
     SpawnTrashBags(coords)
 end
 
 function SpawnTrashBags(coords)
-    local bagModel = `prop_cs_rub_binbag_01`
-    lib.requestModel(bagModel)
+    local bagModel = "prop_cs_rub_binbag_01"
+    if not SafeRequestModel(bagModel) then return end
     
+    local bagHash = joaat(bagModel)
     for i = 1, Config.BagsPerStop do
         local offset = vector3(math.random(-2, 2), math.random(-2, 2), 0)
-        local bag = CreateObject(bagModel, coords.x + offset.x, coords.y + offset.y, coords.z - 1.0, true, true, false)
+        local bag = CreateObject(bagHash, coords.x + offset.x, coords.y + offset.y, coords.z - 1.0, true, true, false)
         PlaceObjectOnGroundProperly(bag)
         
         exports.ox_target:addLocalEntity(bag, {
