@@ -3,6 +3,11 @@ local activeJobs = {}
 lib.callback.register("garbage:server:startJob", function(source)
     local player = exports.qbx_core:GetPlayer(source)
     if not player then return false end
+
+    -- Check for job requirement if Config.JobName is set
+    if Config.JobName and player.PlayerData.job.name ~= Config.JobName then
+        return false
+    end
     
     if activeJobs[source] then return false end
     
